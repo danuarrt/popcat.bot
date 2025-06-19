@@ -116,9 +116,6 @@ client.on('userUpdate', async (oldUser, newUser) => {
   }
 });
 
-// -------- EXISTING LOGS ----------
-import './existingLogs'; // (Jika kamu simpan logs sebelumnya di file)
-
 
 // ---------------- SEND TO LOG CHANNEL --------------
 async function sendEmbedLog(embed, guild) {
