@@ -25,7 +25,12 @@ const PREFIX = '!';
 const distube = new DisTube(client, {
   emitNewSongOnly: true,
   leaveOnFinish: false,
-  plugins: [new SoundCloudPlugin()]
+  searchSongs: 0,
+  plugins: [new SoundCloudPlugin()],
+  youtubeDL: false,
+  ytdlOptions: {
+    highWaterMark: 1 << 25
+  }
 });
 
 // ==== READY ====
