@@ -34,7 +34,7 @@ client.once('ready', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-// ==== MESSAGE COMMAND HANDLER ====
+// ==== MUSIC COMMANDS ====
 client.on('messageCreate', async msg => {
   if (!msg.guild || msg.author.bot || !msg.content.startsWith(PREFIX)) return;
 
@@ -69,7 +69,75 @@ client.on('messageCreate', async msg => {
   }
 });
 
-// ==== LOGGING ====
+// ==== FULL LOGGING ====
+
+client.on('messageCreate', message => {
+  if (!message.guild || message.author.bot) return;
+
+  const content = message.content?.trim() || '*[No text content]*';
+  const attachments = [...message.attachments.values()].map(a => a.url).join('\n');
+
+  const embed = new EmbedBuilder()
+    .setColor('#3b82f6')
+    .setAuthor({ name: `${message.author.tag} (${message.author.id})`, iconURL: message.author.displayAvatarURL() })
+    .setDescription(`💬 Message sent in <#${message.channel.id}> [Jump to message](${message.url})`)
+    .addFields(
+      { name: 'User', value: `<@${message.author.id}>`, inline: true },
+      { name: 'User ID', value: `${message.author.id}`, inline: true },
+      { name: 'Content', value: `\`\`\`${content}\`\`\`` }
+    )
+    .setTimestamp();
+
+  if (attachments) {
+    embed.addFields({ name: '📎 Attachments', value: attachments });
+    embed.setImage(attachments.split('\n')[0]);
+  }
+
+  sendEmbedLog(embed, message.guild);
+});
+
+client.on('messageUpdate', (oldMsg, newMsg) => {
+  if (!oldMsg.guild || oldMsg.partial || newMsg.partial) return;
+  if (oldMsg.content === newMsg.content) return;
+
+  const embed = new EmbedBuilder()
+    .setColor('#facc15')
+    .setAuthor({ name: `${oldMsg.author.tag} (${oldMsg.author.id})`, iconURL: oldMsg.author.displayAvatarURL() })
+    .setDescription(`✏️ Message edited in <#${oldMsg.channel.id}> [Jump to message](${newMsg.url})`)
+    .addFields(
+      { name: 'User', value: `<@${oldMsg.author.id}>`, inline: true },
+      { name: 'User ID', value: `${oldMsg.author.id}`, inline: true },
+      { name: 'Before', value: `\`\`\`${oldMsg.content || '[No content]'}\`\`\`` },
+      { name: 'After', value: `\`\`\`${newMsg.content || '[No content]'}\`\`\`` }
+    )
+    .setTimestamp();
+
+  sendEmbedLog(embed, oldMsg.guild);
+});
+
+client.on('messageDelete', message => {
+  if (!message.guild || message.partial) return;
+  const content = message.content?.trim() || '*[No text content]*';
+  const attachments = [...message.attachments.values()].map(a => a.url).join('\n');
+
+  const embed = new EmbedBuilder()
+    .setColor('#ff5555')
+    .setAuthor({ name: `${message.author?.tag ?? 'Unknown'} (${message.author?.id ?? 'N/A'})`, iconURL: message.author?.displayAvatarURL() ?? null })
+    .setDescription(`🗑️ Message deleted in <#${message.channel.id}>`)
+    .addFields(
+      { name: 'User', value: `<@${message.author?.id}>`, inline: true },
+      { name: 'User ID', value: `${message.author?.id}`, inline: true },
+      { name: 'Content', value: `\`\`\`${content}\`\`\`` }
+    )
+    .setTimestamp();
+
+  if (attachments) {
+    embed.addFields({ name: '📎 Attachments', value: attachments });
+    embed.setImage(attachments.split('\n')[0]);
+  }
+
+  sendEmbedLog(embed, message.guild);
+});
 
 client.on('guildMemberAdd', member => {
   const embed = new EmbedBuilder()
@@ -108,59 +176,6 @@ client.on('guildMemberUpdate', (oldM, newM) => {
   }
 });
 
-client.on('messageDelete', message => {
-  if (!message.guild || message.partial) return;
-  const content = message.content?.trim() || '*[No text content]*';
-  const attachments = [...message.attachments.values()].map(a => a.url).join('\n');
-
-  const embed = new EmbedBuilder()
-    .setColor('#ff5555')
-    .setAuthor({ name: `${message.author?.tag ?? 'Unknown'} (${message.author?.id ?? 'N/A'})`, iconURL: message.author?.displayAvatarURL() ?? null })
-    .setDescription(`🗑️ Message deleted in <#${message.channel.id}>`)
-    .addFields(
-      { name: 'User', value: `<@${message.author?.id}>`, inline: true },
-      { name: 'User ID', value: `${message.author?.id}`, inline: true },
-      { name: 'Content', value: `\`\`\`${content}\`\`\`` }
-    )
-    .setTimestamp();
-
-  if (attachments) {
-    embed.addFields({ name: '📎 Attachments', value: attachments });
-    embed.setImage(attachments.split('\n')[0]);
-  }
-
-  sendEmbedLog(embed, message.guild);
-});
-
-client.on('messageUpdate', (oldMsg, newMsg) => {
-  if (!oldMsg.guild || oldMsg.partial || newMsg.partial) return;
-  if (oldMsg.content === newMsg.content) return;
-
-  const embed = new EmbedBuilder()
-    .setColor('#facc15')
-    .setAuthor({ name: `${oldMsg.author.tag} (${oldMsg.author.id})`, iconURL: oldMsg.author.displayAvatarURL() })
-    .setDescription(`✏️ Message edited in <#${oldMsg.channel.id}> [Jump to message](${newMsg.url})`)
-    .addFields(
-      { name: 'User', value: `<@${oldMsg.author.id}>`, inline: true },
-      { name: 'User ID', value: `${oldMsg.author.id}`, inline: true },
-      { name: 'Before', value: `\`\`\`${oldMsg.content || '[No content]'}\`\`\`` },
-      { name: 'After', value: `\`\`\`${newMsg.content || '[No content]'}\`\`\`` }
-    )
-    .setTimestamp();
-
-  sendEmbedLog(embed, oldMsg.guild);
-});
-
-client.on('channelUpdate', (oldCh, newCh) => {
-  if (oldCh.name !== newCh.name) {
-    const embed = new EmbedBuilder()
-      .setColor('#00bcd4')
-      .setDescription(`🔁 Channel renamed from **${oldCh.name}** to **${newCh.name}**`)
-      .setTimestamp();
-    sendEmbedLog(embed, newCh.guild);
-  }
-});
-
 client.on('guildBanAdd', ban => {
   const embed = new EmbedBuilder()
     .setColor('#e11d48')
@@ -177,7 +192,17 @@ client.on('guildBanRemove', ban => {
   sendEmbedLog(embed, ban.guild);
 });
 
-// SEND TO LOG CHANNEL
+client.on('channelUpdate', (oldCh, newCh) => {
+  if (oldCh.name !== newCh.name) {
+    const embed = new EmbedBuilder()
+      .setColor('#00bcd4')
+      .setDescription(`🔁 Channel renamed from **${oldCh.name}** to **${newCh.name}**`)
+      .setTimestamp();
+    sendEmbedLog(embed, newCh.guild);
+  }
+});
+
+// === SEND LOGS ===
 async function sendEmbedLog(embed, guild) {
   const logChannel = guild.channels.cache.get(LOG_CHANNEL_ID);
   if (!logChannel) return;
