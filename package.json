@@ -14,9 +14,5 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  },
-  "env": {
-    "YTDL_NO_UPDATE": "1",
-    "YTSR_NO_UPDATE": "1"
   }
 }
