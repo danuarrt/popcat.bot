@@ -1,6 +1,5 @@
 import { Client, GatewayIntentBits, Partials, EmbedBuilder } from 'discord.js';
 import { DisTube } from 'distube';
-import { SpotifyPlugin } from '@distube/spotify';
 import { SoundCloudPlugin } from '@distube/soundcloud';
 import dotenv from 'dotenv';
 dotenv.config();
@@ -26,7 +25,7 @@ const PREFIX = '!';
 const distube = new DisTube(client, {
   emitNewSongOnly: true,
   leaveOnFinish: false,
-  plugins: [new SpotifyPlugin(), new SoundCloudPlugin()]
+  plugins: [new SoundCloudPlugin()]
 });
 
 // ==== READY ====
@@ -69,11 +68,9 @@ client.on('messageCreate', async msg => {
   }
 });
 
-// ==== FULL LOGGING ====
-
+// ==== MESSAGE LOGGING ====
 client.on('messageCreate', message => {
   if (!message.guild || message.author.bot) return;
-
   const content = message.content?.trim() || '*[No text content]*';
   const attachments = [...message.attachments.values()].map(a => a.url).join('\n');
 
@@ -139,6 +136,7 @@ client.on('messageDelete', message => {
   sendEmbedLog(embed, message.guild);
 });
 
+// ==== GUILD EVENTS ====
 client.on('guildMemberAdd', member => {
   const embed = new EmbedBuilder()
     .setColor('Green')
@@ -202,7 +200,7 @@ client.on('channelUpdate', (oldCh, newCh) => {
   }
 });
 
-// === SEND LOGS ===
+// ==== SEND LOG ====
 async function sendEmbedLog(embed, guild) {
   const logChannel = guild.channels.cache.get(LOG_CHANNEL_ID);
   if (!logChannel) return;
