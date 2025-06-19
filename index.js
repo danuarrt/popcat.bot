@@ -1,4 +1,7 @@
-import { Client, GatewayIntentBits, Partials, EmbedBuilder, AuditLogEvent } from 'discord.js';
+import { Client, GatewayIntentBits, Partials, EmbedBuilder } from 'discord.js';
+import { DisTube } from 'distube';
+import { SpotifyPlugin } from '@distube/spotify';
+import { SoundCloudPlugin } from '@distube/soundcloud';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -10,18 +13,64 @@ const client = new Client({
     GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildPresences,
+    GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildBans
   ],
   partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
 
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
+const PREFIX = '!';
 
+// ==== DISTUBE SETUP ====
+const distube = new DisTube(client, {
+  emitNewSongOnly: true,
+  leaveOnFinish: false,
+  plugins: [new SpotifyPlugin(), new SoundCloudPlugin()]
+});
+
+// ==== READY ====
 client.once('ready', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-// MEMBER JOIN / LEAVE
+// ==== MESSAGE COMMAND HANDLER ====
+client.on('messageCreate', async msg => {
+  if (!msg.guild || msg.author.bot || !msg.content.startsWith(PREFIX)) return;
+
+  const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
+  const cmd = args.shift()?.toLowerCase();
+
+  const vc = msg.member.voice?.channel;
+  const queue = distube.getQueue(msg);
+
+  if (['play', 'p'].includes(cmd)) {
+    if (!vc) return msg.reply('❌ Join a voice channel first.');
+    distube.play(vc, args.join(' '), { textChannel: msg.channel, member: msg.member });
+  } else if (cmd === 'skip') {
+    if (!queue) return msg.reply('🚫 No song to skip.');
+    queue.skip();
+    msg.channel.send('⏭️ Skipped!');
+  } else if (cmd === 'stop') {
+    if (!queue) return msg.reply('🚫 No song playing.');
+    queue.stop();
+    msg.channel.send('🛑 Stopped!');
+  } else if (cmd === 'queue') {
+    if (!queue) return msg.reply('📭 Queue is empty.');
+    msg.channel.send(`🎶 **Queue:**\n${queue.songs.map((s, i) => `${i + 1}. ${s.name}`).join('\n')}`);
+  } else if (cmd === 'np') {
+    if (!queue) return msg.reply('🚫 Nothing is playing.');
+    msg.channel.send(`🎵 Now playing: **${queue.songs[0].name}**`);
+  } else if (cmd === 'volume') {
+    const vol = parseInt(args[0]);
+    if (isNaN(vol)) return msg.reply('🔊 Volume must be a number.');
+    distube.setVolume(msg, vol);
+    msg.channel.send(`🔊 Volume set to **${vol}%**`);
+  }
+});
+
+// ==== LOGGING ====
+
 client.on('guildMemberAdd', member => {
   const embed = new EmbedBuilder()
     .setColor('Green')
@@ -38,7 +87,6 @@ client.on('guildMemberRemove', member => {
   sendEmbedLog(embed, member.guild);
 });
 
-// ROLE ADD / REMOVE
 client.on('guildMemberUpdate', (oldM, newM) => {
   const added = newM.roles.cache.filter(r => !oldM.roles.cache.has(r.id));
   const removed = oldM.roles.cache.filter(r => !newM.roles.cache.has(r.id));
@@ -60,10 +108,8 @@ client.on('guildMemberUpdate', (oldM, newM) => {
   }
 });
 
-// MESSAGE DELETE
 client.on('messageDelete', message => {
   if (!message.guild || message.partial) return;
-
   const content = message.content?.trim() || '*[No text content]*';
   const attachments = [...message.attachments.values()].map(a => a.url).join('\n');
 
@@ -80,13 +126,12 @@ client.on('messageDelete', message => {
 
   if (attachments) {
     embed.addFields({ name: '📎 Attachments', value: attachments });
-    embed.setImage(attachments.split('\n')[0]); // Show 1st image
+    embed.setImage(attachments.split('\n')[0]);
   }
 
   sendEmbedLog(embed, message.guild);
 });
 
-// MESSAGE EDIT
 client.on('messageUpdate', (oldMsg, newMsg) => {
   if (!oldMsg.guild || oldMsg.partial || newMsg.partial) return;
   if (oldMsg.content === newMsg.content) return;
@@ -106,7 +151,6 @@ client.on('messageUpdate', (oldMsg, newMsg) => {
   sendEmbedLog(embed, oldMsg.guild);
 });
 
-// CHANNEL UPDATE (name only)
 client.on('channelUpdate', (oldCh, newCh) => {
   if (oldCh.name !== newCh.name) {
     const embed = new EmbedBuilder()
@@ -117,7 +161,6 @@ client.on('channelUpdate', (oldCh, newCh) => {
   }
 });
 
-// BAN / UNBAN
 client.on('guildBanAdd', ban => {
   const embed = new EmbedBuilder()
     .setColor('#e11d48')
