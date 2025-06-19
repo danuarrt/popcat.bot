@@ -12,5 +12,8 @@
     "distube": "^4.2.2",
     "@distube/spotify": "^1.4.2",
     "@distube/soundcloud": "^1.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
