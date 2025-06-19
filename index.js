@@ -156,8 +156,7 @@ From ${oldChannel ? `<#${oldChannel.id}>` : '*none*'} to ${newChannel ? `<#${new
     const embed = new EmbedBuilder()
       .setColor('#fb923c')
       .setDescription(`🔊 Voice state changed for <@${newState.id}>:
-${changes.join('
-')}`)
+${changes.join('\n')}`)
       .setTimestamp();
     sendEmbedLog(embed, newState.guild);
   }
