@@ -10,10 +10,13 @@
     "discord.js": "^14.14.1",
     "dotenv": "^16.4.5",
     "distube": "^4.2.2",
-    "@distube/spotify": "^1.4.2",
     "@distube/soundcloud": "^1.2.0"
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "env": {
+    "YTDL_NO_UPDATE": "1",
+    "YTSR_NO_UPDATE": "1"
   }
 }
