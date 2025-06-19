@@ -140,8 +140,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
   if (oldChannel !== newChannel) {
     const embed = new EmbedBuilder()
       .setColor('#8b5cf6')
-      .setDescription(`🔁 <@${newState.id}> moved voice channel:
-From ${oldChannel ? `<#${oldChannel.id}>` : '*none*'} to ${newChannel ? `<#${newChannel.id}>` : '*none*'}`)
+      .setDescription(`🔁 <@${newState.id}> moved voice channel:\nFrom ${oldChannel ? `<#${oldChannel.id}>` : '*none*'} to ${newChannel ? `<#${newChannel.id}>` : '*none*'}`)
       .setTimestamp();
     sendEmbedLog(embed, newState.guild);
   }
@@ -256,8 +255,7 @@ client.on('guildUpdate', async (oldGuild, newGuild) => {
     const embed = new EmbedBuilder()
       .setColor('#fcd34d')
       .setTitle('⚙️ Server settings updated')
-      .setDescription(changes.join('
-'))
+      .setDescription(changes.join('\n'))
       .setTimestamp();
     sendEmbedLog(embed, newGuild);
   }
