@@ -1,4 +1,5 @@
-import { Client, GatewayIntentBits, Partials, EmbedBuilder, AuditLogEvent, Events, PermissionsBitField } from 'discord.js';
+// Discord Server Logger Bot - Full Logging System
+import { Client, GatewayIntentBits, Partials, EmbedBuilder, AuditLogEvent, PermissionsBitField } from 'discord.js';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -11,18 +12,17 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildPresences,
     GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildBans
+    GatewayIntentBits.GuildBans,
+    GatewayIntentBits.GuildIntegrations,
+    GatewayIntentBits.GuildInvites,
+    GatewayIntentBits.GuildWebhooks,
   ],
-  partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.GuildMember, Partials.User]
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.GuildMember]
 });
 
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 
-client.once('ready', () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-});
-
-// Utility: Send to log channel
+// Helper to send embed to log channel
 async function sendEmbedLog(embed, guild) {
   const ch = guild.channels.cache.get(LOG_CHANNEL_ID);
   if (!ch) return;
@@ -33,131 +33,102 @@ async function sendEmbedLog(embed, guild) {
   }
 }
 
-// Voice state updates
+// Ready log
+client.once('ready', () => {
+  console.log(`â Logged in as ${client.user.tag}`);
+});
+
+// Message Create
+client.on('messageCreate', message => {
+  if (!message.guild || message.author.bot) return;
+  const embed = new EmbedBuilder()
+    .setColor('#3b82f6')
+    .setAuthor({ name: `${message.author.tag} (${message.author.id})`, iconURL: message.author.displayAvatarURL() })
+    .setDescription(`ð¬ Message sent in <#${message.channel.id}> [Jump](${message.url})`)
+    .addFields({ name: 'Content', value: message.content || '*No content*' })
+    .setTimestamp();
+  sendEmbedLog(embed, message.guild);
+});
+
+// Message Update
+client.on('messageUpdate', (oldMsg, newMsg) => {
+  if (!oldMsg.guild || oldMsg.partial || newMsg.partial || oldMsg.content === newMsg.content) return;
+  const embed = new EmbedBuilder()
+    .setColor('#facc15')
+    .setAuthor({ name: `${oldMsg.author.tag} (${oldMsg.author.id})`, iconURL: oldMsg.author.displayAvatarURL() })
+    .setDescription(`âï¸ Message edited in <#${oldMsg.channel.id}> [Jump](${newMsg.url})`)
+    .addFields(
+      { name: 'Before', value: oldMsg.content || '*No content*' },
+      { name: 'After', value: newMsg.content || '*No content*' }
+    )
+    .setTimestamp();
+  sendEmbedLog(embed, oldMsg.guild);
+});
+
+// Message Delete
+client.on('messageDelete', message => {
+  if (!message.guild || message.partial) return;
+  const embed = new EmbedBuilder()
+    .setColor('#ef4444')
+    .setAuthor({ name: `${message.author?.tag ?? 'Unknown'} (${message.author?.id ?? 'N/A'})`, iconURL: message.author?.displayAvatarURL() ?? null })
+    .setDescription(`ðï¸ Message deleted in <#${message.channel.id}>`)
+    .addFields({ name: 'Content', value: message.content || '*No content*' })
+    .setTimestamp();
+  sendEmbedLog(embed, message.guild);
+});
+
+// Member Join/Leave
+client.on('guildMemberAdd', member => {
+  const embed = new EmbedBuilder()
+    .setColor('Green')
+    .setDescription(`ð¢ <@${member.id}> joined the server.`)
+    .setTimestamp();
+  sendEmbedLog(embed, member.guild);
+});
+
+client.on('guildMemberRemove', member => {
+  const embed = new EmbedBuilder()
+    .setColor('Red')
+    .setDescription(`ð´ <@${member.id}> left the server.`)
+    .setTimestamp();
+  sendEmbedLog(embed, member.guild);
+});
+
+// Voice Channel Logs
 client.on('voiceStateUpdate', async (oldState, newState) => {
-  const user = `<@${newState.id}>`;
-
   if (oldState.channelId !== newState.channelId) {
-    const from = oldState.channel?.name || 'none';
-    const to = newState.channel?.name || 'none';
-    const embed = new EmbedBuilder().setColor('#8b5cf6').setDescription(`🔁 ${user} moved voice channel:
-**From:** ${from}
-**To:** ${to}`).setTimestamp();
-    sendEmbedLog(embed, newState.guild);
-  }
-
-  const changes = [];
-  if (oldState.selfMute !== newState.selfMute) changes.push(`Self-mute: ${newState.selfMute}`);
-  if (oldState.selfDeaf !== newState.selfDeaf) changes.push(`Self-deafen: ${newState.selfDeaf}`);
-  if (oldState.serverMute !== newState.serverMute) changes.push(`Server-mute: ${newState.serverMute}`);
-  if (oldState.serverDeaf !== newState.serverDeaf) changes.push(`Server-deafen: ${newState.serverDeaf}`);
-
-  if (changes.length) {
-    let actorInfo = '';
-    const logs = await newState.guild.fetchAuditLogs({ type: AuditLogEvent.MemberUpdate, limit: 1 });
-    const entry = logs.entries.find(e => e.target.id === newState.id);
-    if (entry) actorInfo = ` by <@${entry.executor.id}>`;
-
-    const embed = new EmbedBuilder().setColor('#ff00ff').setDescription(`🔇 Voice state changed for ${user}${actorInfo}
-${changes.join('\n')}`).setTimestamp();
+    const embed = new EmbedBuilder()
+      .setColor('#8b5cf6')
+      .setDescription(`ð <@${newState.id}> moved VC:
+From **${oldState.channel?.name || 'None'}** to **${newState.channel?.name || 'None'}**`)
+      .setTimestamp();
     sendEmbedLog(embed, newState.guild);
   }
 });
 
-// Role update/create/delete
+// Role Update
 client.on('roleUpdate', async (oldRole, newRole) => {
-  const changes = [];
-  if (oldRole.color !== newRole.color) changes.push(`Color: ${oldRole.hexColor} → ${newRole.hexColor}`);
+  const diffs = [];
+  if (oldRole.color !== newRole.color) diffs.push(`Color: ${oldRole.hexColor} â ${newRole.hexColor}`);
   if (oldRole.permissions.bitfield !== newRole.permissions.bitfield) {
-    const oldPerms = oldRole.permissions.toArray();
-    const newPerms = newRole.permissions.toArray();
+    const oldPerms = new PermissionsBitField(oldRole.permissions.bitfield).toArray();
+    const newPerms = new PermissionsBitField(newRole.permissions.bitfield).toArray();
     const added = newPerms.filter(p => !oldPerms.includes(p));
     const removed = oldPerms.filter(p => !newPerms.includes(p));
-    if (added.length) changes.push(`➕ Added: ${added.join(', ')}`);
-    if (removed.length) changes.push(`➖ Removed: ${removed.join(', ')}`);
+    if (added.length) diffs.push(`â Added: ${added.join(', ')}`);
+    if (removed.length) diffs.push(`â Removed: ${removed.join(', ')}`);
   }
-  if (!changes.length) return;
-
-  const logs = await newRole.guild.fetchAuditLogs({ type: AuditLogEvent.RoleUpdate, limit: 1 });
+  if (!diffs.length) return;
+  const logs = await newRole.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.RoleUpdate });
   const entry = logs.entries.first();
-
   const embed = new EmbedBuilder()
     .setColor('#f59e0b')
-    .setTitle(`⚙️ Role updated: <@&${newRole.id}>`)
-    .setDescription(changes.join('\n'))
-    .addFields({ name: 'By', value: entry ? `<@${entry.executor.id}>` : 'Unknown' })
+    .setTitle(`âï¸ Role updated: <@&${newRole.id}>`)
+    .setDescription(diffs.join('
+'))
+    .addFields({ name: 'By', value: entry ? `<@${entry.executor.id}>` : 'Unknown', inline: true })
     .setTimestamp();
   sendEmbedLog(embed, newRole.guild);
-});
-
-client.on('roleCreate', async role => {
-  const logs = await role.guild.fetchAuditLogs({ type: AuditLogEvent.RoleCreate, limit: 1 });
-  const entry = logs.entries.first();
-  const embed = new EmbedBuilder().setColor('#22c55e').setDescription(`➕ Role <@&${role.id}> created by <@${entry.executor.id}>`).setTimestamp();
-  sendEmbedLog(embed, role.guild);
-});
-
-client.on('roleDelete', async role => {
-  const logs = await role.guild.fetchAuditLogs({ type: AuditLogEvent.RoleDelete, limit: 1 });
-  const entry = logs.entries.first();
-  const embed = new EmbedBuilder().setColor('#ef4444').setDescription(`🗑️ Role **${role.name}** deleted by <@${entry.executor.id}>`).setTimestamp();
-  sendEmbedLog(embed, role.guild);
-});
-
-// Channel create/delete
-client.on('channelCreate', async ch => {
-  const logs = await ch.guild.fetchAuditLogs({ type: AuditLogEvent.ChannelCreate, limit: 1 });
-  const entry = logs.entries.first();
-  const embed = new EmbedBuilder().setColor('#0ea5e9').setDescription(`➕ Channel <#${ch.id}> created by <@${entry.executor.id}>`).setTimestamp();
-  sendEmbedLog(embed, ch.guild);
-});
-
-client.on('channelDelete', async ch => {
-  const logs = await ch.guild.fetchAuditLogs({ type: AuditLogEvent.ChannelDelete, limit: 1 });
-  const entry = logs.entries.first();
-  const embed = new EmbedBuilder().setColor('#dc2626').setDescription(`🗑️ Channel **${ch.name}** deleted by <@${entry.executor.id}>`).setTimestamp();
-  sendEmbedLog(embed, ch.guild);
-});
-
-// Emoji/sticker events
-client.on('emojiCreate', emoji => {
-  const embed = new EmbedBuilder().setColor('#fbbf24').setDescription(`🆕 Emoji added: ${emoji}`).setTimestamp();
-  sendEmbedLog(embed, emoji.guild);
-});
-
-client.on('emojiDelete', emoji => {
-  const embed = new EmbedBuilder().setColor('#e11d48').setDescription(`🗑️ Emoji deleted: **${emoji.name}**`).setTimestamp();
-  sendEmbedLog(embed, emoji.guild);
-});
-
-client.on('stickerCreate', sticker => {
-  const embed = new EmbedBuilder().setColor('#fbbf24').setDescription(`🆕 Sticker added: **${sticker.name}**`).setTimestamp();
-  sendEmbedLog(embed, sticker.guild);
-});
-
-client.on('stickerDelete', sticker => {
-  const embed = new EmbedBuilder().setColor('#e11d48').setDescription(`🗑️ Sticker deleted: **${sticker.name}**`).setTimestamp();
-  sendEmbedLog(embed, sticker.guild);
-});
-
-// Webhook update
-client.on('webhookUpdate', async (ch) => {
-  const logs = await ch.guild.fetchAuditLogs({ type: AuditLogEvent.WebhookCreate, limit: 1 });
-  const entry = logs.entries.first();
-  if (entry) {
-    const embed = new EmbedBuilder().setColor('#f43f5e').setDescription(`📡 Webhook updated in <#${ch.id}> by <@${entry.executor.id}>`).setTimestamp();
-    sendEmbedLog(embed, ch.guild);
-  }
-});
-
-// Mass ping detection
-client.on('messageCreate', async msg => {
-  if (!msg.guild || msg.author.bot) return;
-  const mentionCount = (msg.content.match(/<@!?\d+>/g) || []).length;
-  if (mentionCount >= 5) {
-    const embed = new EmbedBuilder().setColor('#f87171').setDescription(`🚨 Mass ping detected by <@${msg.author.id}> (${mentionCount} mentions)`).setTimestamp();
-    sendEmbedLog(embed, msg.guild);
-  }
 });
 
 client.login(process.env.TOKEN);
