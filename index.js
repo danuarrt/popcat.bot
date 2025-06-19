@@ -26,11 +26,7 @@ const distube = new DisTube(client, {
   emitNewSongOnly: true,
   leaveOnFinish: false,
   searchSongs: 0,
-  plugins: [new SoundCloudPlugin()],
-  youtubeDL: false,
-  ytdlOptions: {
-    highWaterMark: 1 << 25
-  }
+  plugins: [new SoundCloudPlugin()]
 });
 
 // ==== READY ====
