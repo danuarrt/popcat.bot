@@ -21,7 +21,7 @@ const client = new Client({
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 const PREFIX = '!';
 
-// ==== DISTUBE SETUP ====
+// ==== DISTUBE SETUP (SoundCloud Only) ====
 const distube = new DisTube(client, {
   emitNewSongOnly: true,
   leaveOnFinish: false,
@@ -68,9 +68,11 @@ client.on('messageCreate', async msg => {
   }
 });
 
-// ==== MESSAGE LOGGING ====
+// ==== FULL LOGGING ====
+
 client.on('messageCreate', message => {
   if (!message.guild || message.author.bot) return;
+
   const content = message.content?.trim() || '*[No text content]*';
   const attachments = [...message.attachments.values()].map(a => a.url).join('\n');
 
@@ -136,7 +138,7 @@ client.on('messageDelete', message => {
   sendEmbedLog(embed, message.guild);
 });
 
-// ==== GUILD EVENTS ====
+// MEMBER EVENTS
 client.on('guildMemberAdd', member => {
   const embed = new EmbedBuilder()
     .setColor('Green')
@@ -200,7 +202,7 @@ client.on('channelUpdate', (oldCh, newCh) => {
   }
 });
 
-// ==== SEND LOG ====
+// === SEND LOGS ===
 async function sendEmbedLog(embed, guild) {
   const logChannel = guild.channels.cache.get(LOG_CHANNEL_ID);
   if (!logChannel) return;
