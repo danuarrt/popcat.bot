@@ -1,6 +1,4 @@
-import { Client, GatewayIntentBits, Partials, EmbedBuilder } from 'discord.js';
-import { DisTube } from 'distube';
-import { SoundCloudPlugin } from '@distube/soundcloud';
+import { Client, GatewayIntentBits, Partials, EmbedBuilder, AuditLogEvent } from 'discord.js';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -15,200 +13,119 @@ const client = new Client({
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildBans
   ],
-  partials: [Partials.Message, Partials.Channel, Partials.Reaction]
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.GuildMember]
 });
 
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
-const PREFIX = '!';
 
-// ==== DISTUBE SETUP (SoundCloud Only) ====
-const distube = new DisTube(client, {
-  emitNewSongOnly: true,
-  leaveOnFinish: false,
-  searchSongs: 0,
-  plugins: [new SoundCloudPlugin()]
-});
-
-// ==== READY ====
 client.once('ready', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-// ==== MUSIC COMMANDS ====
-client.on('messageCreate', async msg => {
-  if (!msg.guild || msg.author.bot || !msg.content.startsWith(PREFIX)) return;
+// ------------- VOICE CHANNEL ------------
+client.on('voiceStateUpdate', async (oldState, newState) => {
+  if (oldState.channelId !== newState.channelId) {
+    const before = oldState.channel?.name ? `<#${oldState.channel.id}>` : 'none';
+    const after = newState.channel?.name ? `<#${newState.channel.id}>` : 'none';
+    const embed = new EmbedBuilder()
+      .setColor('#8b5cf6')
+      .setDescription(`🔁 <@${newState.id}> moved voice channel:\nFrom **${before}** to **${after}**`)
+      .setTimestamp();
+    sendEmbedLog(embed, newState.guild);
+  }
 
-  const args = msg.content.slice(PREFIX.length).trim().split(/ +/);
-  const cmd = args.shift()?.toLowerCase();
+  // Mute/deafen
+  const changes = [];
+  if (oldState.selfMute !== newState.selfMute) changes.push(`Self-mute → ${newState.selfMute}`);
+  if (oldState.selfDeaf !== newState.selfDeaf) changes.push(`Self-deafen → ${newState.selfDeaf}`);
+  if (oldState.serverMute !== newState.serverMute) changes.push(`Server-mute → ${newState.serverMute}`);
+  if (oldState.serverDeaf !== newState.serverDeaf) changes.push(`Server-deafen → ${newState.serverDeaf}`);
 
-  const vc = msg.member.voice?.channel;
-  const queue = distube.getQueue(msg);
-
-  if (['play', 'p'].includes(cmd)) {
-    if (!vc) return msg.reply('❌ Join a voice channel first.');
-    distube.play(vc, args.join(' '), { textChannel: msg.channel, member: msg.member });
-  } else if (cmd === 'skip') {
-    if (!queue) return msg.reply('🚫 No song to skip.');
-    queue.skip();
-    msg.channel.send('⏭️ Skipped!');
-  } else if (cmd === 'stop') {
-    if (!queue) return msg.reply('🚫 No song playing.');
-    queue.stop();
-    msg.channel.send('🛑 Stopped!');
-  } else if (cmd === 'queue') {
-    if (!queue) return msg.reply('📭 Queue is empty.');
-    msg.channel.send(`🎶 **Queue:**\n${queue.songs.map((s, i) => `${i + 1}. ${s.name}`).join('\n')}`);
-  } else if (cmd === 'np') {
-    if (!queue) return msg.reply('🚫 Nothing is playing.');
-    msg.channel.send(`🎵 Now playing: **${queue.songs[0].name}**`);
-  } else if (cmd === 'volume') {
-    const vol = parseInt(args[0]);
-    if (isNaN(vol)) return msg.reply('🔊 Volume must be a number.');
-    distube.setVolume(msg, vol);
-    msg.channel.send(`🔊 Volume set to **${vol}%**`);
+  if (changes.length) {
+    // Who caused server-mute/deaf?
+    let actorInfo = '';
+    if (changes.some(c => c.startsWith('Server-'))) {
+      const logs = await newState.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.MemberUpdate });
+      const entry = logs.entries.first();
+      if (entry?.target.id === newState.id) actorInfo = ` by <@${entry.executor.id}>`;
+    }
+    const embed = new EmbedBuilder()
+      .setColor('#ff00ff')
+      .setDescription(`🔇 Voice state changed for <@${newState.id}>${actorInfo}\n${changes.join('\n')}`)
+      .setTimestamp();
+    sendEmbedLog(embed, newState.guild);
   }
 });
 
-// ==== FULL LOGGING ====
+// ------------ PERMISSION & ROLE COLOR ------------
+client.on('roleUpdate', async (oldRole, newRole) => {
+  const diffs = [];
+  if (oldRole.color !== newRole.color) diffs.push(`Color: ${oldRole.hexColor} → ${newRole.hexColor}`);
+  if (oldRole.permissions.bitfield !== newRole.permissions.bitfield) diffs.push(`Permissions changed`);
+  if (!diffs.length) return;
 
-client.on('messageCreate', message => {
-  if (!message.guild || message.author.bot) return;
-
-  const content = message.content?.trim() || '*[No text content]*';
-  const attachments = [...message.attachments.values()].map(a => a.url).join('\n');
+  const logs = await newRole.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.RoleUpdate });
+  const entry = logs.entries.first();
 
   const embed = new EmbedBuilder()
-    .setColor('#3b82f6')
-    .setAuthor({ name: `${message.author.tag} (${message.author.id})`, iconURL: message.author.displayAvatarURL() })
-    .setDescription(`💬 Message sent in <#${message.channel.id}> [Jump to message](${message.url})`)
+    .setColor('#f59e0b')
+    .setTitle(`⚙️ Role updated: ${newRole.name}`)
+    .setDescription(diffs.join('\n'))
     .addFields(
-      { name: 'User', value: `<@${message.author.id}>`, inline: true },
-      { name: 'User ID', value: `${message.author.id}`, inline: true },
-      { name: 'Content', value: `\`\`\`${content}\`\`\`` }
+      { name: 'By', value: entry ? `<@${entry.executor.id}>` : 'Unknown', inline: true }
     )
     .setTimestamp();
+  sendEmbedLog(embed, newRole.guild);
+});
 
-  if (attachments) {
-    embed.addFields({ name: '📎 Attachments', value: attachments });
-    embed.setImage(attachments.split('\n')[0]);
+// --------- INVITE CREATED ----------
+client.on('inviteCreate', async invite => {
+  const logs = await invite.guild.fetchAuditLogs({ limit: 1, type: AuditLogEvent.InviteCreate });
+  const entry = logs.entries.first();
+
+  const embed = new EmbedBuilder()
+    .setColor('#10b981')
+    .setDescription(`🔗 Invite created by <@${entry.executor.id}>:\n**Code:** ${invite.code}\n**Channel:** ${invite.channel?.name}`)
+    .setTimestamp();
+  sendEmbedLog(embed, invite.guild);
+});
+
+// -------- USER AVATAR & USERNAME CHANGE ----------
+client.on('userUpdate', async (oldUser, newUser) => {
+  const guilds = client.guilds.cache.filter(g => g.members.cache.has(newUser.id));
+  if (oldUser.avatar !== newUser.avatar) {
+    guilds.forEach(g => {
+      const embed = new EmbedBuilder()
+        .setColor('#3b82f6')
+        .setDescription(`🖼️ <@${newUser.id}> updated their avatar.`)
+        .setImage(newUser.displayAvatarURL({ size: 512 }))
+        .setTimestamp();
+      sendEmbedLog(embed, g);
+    });
   }
-
-  sendEmbedLog(embed, message.guild);
-});
-
-client.on('messageUpdate', (oldMsg, newMsg) => {
-  if (!oldMsg.guild || oldMsg.partial || newMsg.partial) return;
-  if (oldMsg.content === newMsg.content) return;
-
-  const embed = new EmbedBuilder()
-    .setColor('#facc15')
-    .setAuthor({ name: `${oldMsg.author.tag} (${oldMsg.author.id})`, iconURL: oldMsg.author.displayAvatarURL() })
-    .setDescription(`✏️ Message edited in <#${oldMsg.channel.id}> [Jump to message](${newMsg.url})`)
-    .addFields(
-      { name: 'User', value: `<@${oldMsg.author.id}>`, inline: true },
-      { name: 'User ID', value: `${oldMsg.author.id}`, inline: true },
-      { name: 'Before', value: `\`\`\`${oldMsg.content || '[No content]'}\`\`\`` },
-      { name: 'After', value: `\`\`\`${newMsg.content || '[No content]'}\`\`\`` }
-    )
-    .setTimestamp();
-
-  sendEmbedLog(embed, oldMsg.guild);
-});
-
-client.on('messageDelete', message => {
-  if (!message.guild || message.partial) return;
-  const content = message.content?.trim() || '*[No text content]*';
-  const attachments = [...message.attachments.values()].map(a => a.url).join('\n');
-
-  const embed = new EmbedBuilder()
-    .setColor('#ff5555')
-    .setAuthor({ name: `${message.author?.tag ?? 'Unknown'} (${message.author?.id ?? 'N/A'})`, iconURL: message.author?.displayAvatarURL() ?? null })
-    .setDescription(`🗑️ Message deleted in <#${message.channel.id}>`)
-    .addFields(
-      { name: 'User', value: `<@${message.author?.id}>`, inline: true },
-      { name: 'User ID', value: `${message.author?.id}`, inline: true },
-      { name: 'Content', value: `\`\`\`${content}\`\`\`` }
-    )
-    .setTimestamp();
-
-  if (attachments) {
-    embed.addFields({ name: '📎 Attachments', value: attachments });
-    embed.setImage(attachments.split('\n')[0]);
-  }
-
-  sendEmbedLog(embed, message.guild);
-});
-
-// MEMBER EVENTS
-client.on('guildMemberAdd', member => {
-  const embed = new EmbedBuilder()
-    .setColor('Green')
-    .setDescription(`🟢 <@${member.id}> joined the server.\n**User ID:** ${member.id}`)
-    .setTimestamp();
-  sendEmbedLog(embed, member.guild);
-});
-
-client.on('guildMemberRemove', member => {
-  const embed = new EmbedBuilder()
-    .setColor('Red')
-    .setDescription(`🔴 <@${member.id}> left the server.\n**User ID:** ${member.id}`)
-    .setTimestamp();
-  sendEmbedLog(embed, member.guild);
-});
-
-client.on('guildMemberUpdate', (oldM, newM) => {
-  const added = newM.roles.cache.filter(r => !oldM.roles.cache.has(r.id));
-  const removed = oldM.roles.cache.filter(r => !newM.roles.cache.has(r.id));
-
-  for (const role of added.values()) {
-    const embed = new EmbedBuilder()
-      .setColor('Green')
-      .setDescription(`➕ Role **${role.name}** added to <@${newM.id}>.\n**User ID:** ${newM.id}`)
-      .setTimestamp();
-    sendEmbedLog(embed, newM.guild);
-  }
-
-  for (const role of removed.values()) {
-    const embed = new EmbedBuilder()
-      .setColor('Orange')
-      .setDescription(`➖ Role **${role.name}** removed from <@${newM.id}>.\n**User ID:** ${newM.id}`)
-      .setTimestamp();
-    sendEmbedLog(embed, newM.guild);
+  if (oldUser.username !== newUser.username) {
+    const logs = guilds.first()?.fetchAuditLogs({ limit: 1, type: AuditLogEvent.UserUpdate });
+    const executor = (await logs).entries.first().executor?.id;
+    guilds.forEach(g => {
+      const embed = new EmbedBuilder()
+        .setColor('#6366f1')
+        .setDescription(`✏️ <@${newUser.id}> changed username 📝\nFrom **${oldUser.username}** to **${newUser.username}**${executor && executor !== newUser.id ? ` by <@${executor}>` : ''}`)
+        .setTimestamp();
+      sendEmbedLog(embed, g);
+    });
   }
 });
 
-client.on('guildBanAdd', ban => {
-  const embed = new EmbedBuilder()
-    .setColor('#e11d48')
-    .setDescription(`🔨 <@${ban.user.id}> was banned.\n**User ID:** ${ban.user.id}`)
-    .setTimestamp();
-  sendEmbedLog(embed, ban.guild);
-});
+// -------- EXISTING LOGS ----------
+import './existingLogs'; // (Jika kamu simpan logs sebelumnya di file)
 
-client.on('guildBanRemove', ban => {
-  const embed = new EmbedBuilder()
-    .setColor('#4ade80')
-    .setDescription(`⚖️ <@${ban.user.id}> was unbanned.\n**User ID:** ${ban.user.id}`)
-    .setTimestamp();
-  sendEmbedLog(embed, ban.guild);
-});
 
-client.on('channelUpdate', (oldCh, newCh) => {
-  if (oldCh.name !== newCh.name) {
-    const embed = new EmbedBuilder()
-      .setColor('#00bcd4')
-      .setDescription(`🔁 Channel renamed from **${oldCh.name}** to **${newCh.name}**`)
-      .setTimestamp();
-    sendEmbedLog(embed, newCh.guild);
-  }
-});
-
-// === SEND LOGS ===
+// ---------------- SEND TO LOG CHANNEL --------------
 async function sendEmbedLog(embed, guild) {
-  const logChannel = guild.channels.cache.get(LOG_CHANNEL_ID);
-  if (!logChannel) return;
+  const ch = guild.channels.cache.get(LOG_CHANNEL_ID);
+  if (!ch) return;
   try {
-    await logChannel.send({ embeds: [embed] });
+    await ch.send({ embeds: [embed] });
   } catch (e) {
     console.error('Log error:', e);
   }
